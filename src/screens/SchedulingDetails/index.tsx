@@ -1,136 +1,191 @@
-import React from 'react';
-import { BackButton } from '../../components/BackButton';
-import { ImageSlider } from '../../components/ImageSlider';
-import { Accessory } from '../../components/Accessory';
-import { Button } from '../../components/Button';
-import {Feather} from '@expo/vector-icons';
-import { RFValue } from 'react-native-responsive-fontsize';
-import { useTheme } from 'styled-components';
+import React, { useEffect, useState } from "react";
+import { BackButton } from "../../components/BackButton";
+import { ImageSlider } from "../../components/ImageSlider";
+import { Accessory } from "../../components/Accessory";
+import { Button } from "../../components/Button";
+import { Feather } from "@expo/vector-icons";
+import { RFValue } from "react-native-responsive-fontsize";
+import { useTheme } from "styled-components";
 
-
-import speedSvg from '../../assets/speed.svg';
-import accelerationSvg from '../../assets/acceleration.svg';
-import forceSvg from '../../assets/force.svg';
-import gasolineSvg from '../../assets/gasoline.svg';
-import exchangeSvg from '../../assets/exchange.svg';
-import peopleSvg from '../../assets/people.svg';
+import { CarDTO } from "../../dtos/CarDTO";
+import { getAccessoryIcons } from "../../utils/getAccessoryIcons";
 
 import {
-   Container,
-   Header,
-   CarImages,
-   Content,
-   Details,
-   Description,
-   Brand,
-   Name,
-   Rent,
-   Period,
-   Price,
-   Accessories,
-   Footer,
-   RentalPeriod,
-   CalendarIcon,
-   DateInfo,
-   DateTitle,
-   DateValue,
-   RentalPrice,
-   RentalPriceLabel,
-   RentalPriceDetails,
-   RentalPriceQuota,
-   RentalPriceTotal,
-} from './styles';
-import { useNavigation } from '@react-navigation/native';
+  Container,
+  Header,
+  CarImages,
+  Content,
+  Details,
+  Description,
+  Brand,
+  Name,
+  Rent,
+  Period,
+  Price,
+  Accessories,
+  Footer,
+  RentalPeriod,
+  CalendarIcon,
+  DateInfo,
+  DateTitle,
+  DateValue,
+  RentalPrice,
+  RentalPriceLabel,
+  RentalPriceDetails,
+  RentalPriceQuota,
+  RentalPriceTotal,
+} from "./styles";
+import { useNavigation, useRoute } from "@react-navigation/native";
+import { format } from "date-fns";
+import { getPlatformDate } from "../../utils/getPlataformDate";
+import { api } from "../../services/api";
+import { Alert } from "react-native";
 
- 
-export function SchedulingDetails(){
+interface Params {
+  car: CarDTO;
+  dates: string;
+}
 
-  const navigation = useNavigation()
+interface RentalPeriod {
+  start: string;
+  end: string;
+}
 
-  function handleConfirmRental() {
-    navigation.navigate('SchedulingComplete');
+export function SchedulingDetails() {
+  const [loading, setLoading] = useState(false);
+  const [rentalPeriod, setrentalPeriod] = useState<RentalPeriod>(
+    {} as RentalPeriod
+  );
+
+  const navigation = useNavigation();
+  const route = useRoute();
+  const { car, dates } = route.params as Params;
+
+  const rentTotal = Number(dates.length * car.rent.price);
+
+  async function handleConfirmRental() {
+    const schedulesByCar = await api.get(`/schedules_bycars/${car.id}`);
+
+    const unavailable_dates = [
+      ...schedulesByCar.data.unavailable_dates,
+      ...dates
+    ];
+
+    setLoading(true)
+
+    await api.post('schedules_byuser', {
+      user_id: 1,
+      car,
+     
+      startDate: format(getPlatformDate(new Date(dates[0])), "dd/MM/yyyy"),
+      endDate: format( getPlatformDate(new Date(dates[dates.length - 1])), "dd/MM/yyyy")
+    })
+      
+    api.put(`/schedules_bycars/${car.id}`, {
+        id: car.id,
+        unavailable_dates
+        
+      })
+      .then(() => navigation.navigate("SchedulingComplete"))
+      .catch(() => {
+      Alert.alert('Não foi possível conectar')
+      setLoading(false)
+      });
   }
 
+  function handleBack() {
+    navigation.goBack();
+  }
 
-  const theme = useTheme()
+  useEffect(() => {
+    setrentalPeriod({
+      start: format(getPlatformDate(new Date(dates[0])), "dd/MM/yyyy"),
+      end: format(
+        getPlatformDate(new Date(dates[dates.length - 1])),
+        "dd/MM/yyyy"
+      ),
+    });
+  }, []);
+
+  const theme = useTheme();
 
   return (
-      <Container>
-          <Header>
-              <BackButton onPress={() => {}} />
-          </Header>
+    <Container>
+      <Header>
+        <BackButton onPress={handleBack} />
+      </Header>
 
-        <CarImages>
-        <ImageSlider
-            imageUrl={['https://production.autoforce.com/uploads/version/profile_image/3188/model_main_comprar-tiptronic_87272c1ff1.png']}
+      <CarImages>
+        <ImageSlider imageUrl={car.photos} />
+      </CarImages>
+
+      <Content>
+        <Details>
+          <Description>
+            <Brand>{car.brand}</Brand>
+            <Name>{car.name}</Name>
+          </Description>
+
+          <Rent>
+            <Period>{car.rent.period}</Period>
+            <Price>R$ {car.rent.price}</Price>
+          </Rent>
+        </Details>
+
+        <Accessories>
+          {car.accessories.map((accessory) => (
+            <Accessory
+              key={accessory.type}
+              name={accessory.name}
+              icon={getAccessoryIcons(accessory.type)}
+            />
+          ))}
+        </Accessories>
+
+        <RentalPeriod>
+          <CalendarIcon>
+            <Feather
+              size={RFValue(24)}
+              color={theme.colors.shape}
+              name={"calendar"}
+            />
+          </CalendarIcon>
+
+          <DateInfo>
+            <DateTitle>De</DateTitle>
+            <DateValue>{rentalPeriod.start}</DateValue>
+          </DateInfo>
+
+          <Feather
+            size={RFValue(10)}
+            color={theme.colors.text}
+            name={"chevron-right"}
+          />
+
+          <DateInfo>
+            <DateTitle>Até</DateTitle>
+            <DateValue>{rentalPeriod.end}</DateValue>
+          </DateInfo>
+        </RentalPeriod>
+
+        <RentalPrice>
+          <RentalPriceLabel>Total</RentalPriceLabel>
+          <RentalPriceDetails>
+            <RentalPriceQuota>{`R$ ${car.rent.price} x${dates.length} diárias`}</RentalPriceQuota>
+            <RentalPriceTotal>R$ {rentTotal}</RentalPriceTotal>
+          </RentalPriceDetails>
+        </RentalPrice>
+      </Content>
+
+      <Footer>
+        <Button
+          title="Alugar agora"
+          onPress={handleConfirmRental}
+          color={theme.colors.succes}
+          enabled={!loading}
+          loading={loading}
         />
-        </CarImages>
-
-        <Content>
-            <Details>
-              <Description>
-                <Brand>Lamborgini</Brand>
-                <Name>Huracan</Name>
-              </Description>
-
-              <Rent>
-                <Period>Ao dia</Period>
-                <Price>R$ 580</Price>
-              </Rent>
-            </Details>
-
-            <Accessories>
-              <Accessory name="380km/h" icon={speedSvg} />
-              <Accessory name="3.2s" icon={accelerationSvg} />
-              <Accessory name="800 HP" icon={forceSvg} />
-              <Accessory name="Gasolina" icon={gasolineSvg} />
-              <Accessory name="Auto" icon={exchangeSvg} />
-              <Accessory name="2 pessoas" icon={peopleSvg} />
-            </Accessories>
-
-            <RentalPeriod>
-              <CalendarIcon>
-                  <Feather
-                    size={RFValue(24)}
-                    color={theme.colors.shape}
-                    name={ 'calendar' }
-                  />
-              </CalendarIcon>
-
-              <DateInfo>
-                <DateTitle>De</DateTitle>
-                <DateValue>05/03/2022</DateValue>
-              </DateInfo>
-
-              <Feather
-                    size={RFValue(10)}
-                    color={theme.colors.text}
-                    name={ 'chevron-right' }
-                  />
-
-              <DateInfo>
-                <DateTitle>Até</DateTitle>
-                <DateValue>10/03/2022</DateValue>
-              </DateInfo>
-
-            </RentalPeriod>
-
-            <RentalPrice>
-              <RentalPriceLabel>Total</RentalPriceLabel>
-              <RentalPriceDetails>
-                <RentalPriceQuota>R$ 580 x3 diárias</RentalPriceQuota>
-                <RentalPriceTotal>R$ 2.900</RentalPriceTotal>
-              </RentalPriceDetails>
-            </RentalPrice>
-
-        </Content>
-
-
-        <Footer>
-              <Button title='Alugar agora' onPress={handleConfirmRental} color={theme.colors.succes} />
-        </Footer>
-
-
-      </Container>
-  )
+      </Footer>
+    </Container>
+  );
 }
